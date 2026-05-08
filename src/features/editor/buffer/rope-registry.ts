@@ -8,18 +8,13 @@
 // virtual buffers, etc.), getRope returns null — callers fall back to string
 // operations on `.content`.
 
+import { EDITOR_CONSTANTS } from "@/features/editor/config/constants";
 import { Rope } from "./rope";
 
 const registry = new Map<string, Rope>();
 
-// Don't bother building a rope for small buffers — the chunked storage costs
-// more than it saves below this threshold, and `Rope.fromString` is O(n)
-// chunking on every content change. Once edit-op-aware mutations land
-// (spliceRope on keystroke), this gate can drop and updates become O(log N).
-const ROPE_MIN_BYTES = 64 * 1024;
-
 export function registerRope(bufferId: string, content: string): Rope | null {
-  if (content.length < ROPE_MIN_BYTES) {
+  if (content.length < EDITOR_CONSTANTS.ROPE_BACKING_MIN_BYTES) {
     registry.delete(bufferId);
     return null;
   }
@@ -29,7 +24,7 @@ export function registerRope(bufferId: string, content: string): Rope | null {
 }
 
 export function updateRope(bufferId: string, content: string): Rope | null {
-  if (content.length < ROPE_MIN_BYTES) {
+  if (content.length < EDITOR_CONSTANTS.ROPE_BACKING_MIN_BYTES) {
     registry.delete(bufferId);
     return null;
   }
