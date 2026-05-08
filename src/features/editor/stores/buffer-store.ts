@@ -6,6 +6,7 @@ import type { DatabaseType } from "@/features/database/models/provider.types";
 import { EDITOR_CONSTANTS } from "@/features/editor/config/constants";
 import { evictLeastRecentAutoClosableBuffer } from "@/features/editor/stores/buffer-eviction";
 import { createPaneContent } from "@/features/editor/stores/buffer-content-factory";
+import { dropRope, registerRope, updateRope } from "@/features/editor/buffer/rope-registry";
 import {
   closeNewTabInActivePane,
   removeBufferFromPanes,
@@ -292,6 +293,7 @@ export const useBufferStore = createSelectors(
 
               const id = generateBufferId(spec.path);
               const newBuffer = createPaneContent(id, spec) as EditorContent;
+              registerRope(id, newBuffer.content);
 
               set((state) => {
                 state.buffers = [...newBuffers.map((b) => ({ ...b, isActive: false })), newBuffer];
@@ -978,6 +980,7 @@ export const useBufferStore = createSelectors(
           if (bufferIndex === -1) return;
 
           cleanupBufferHistoryTracking(bufferId);
+          dropRope(bufferId);
 
           removeBufferFromPanes(bufferId);
 
@@ -1111,6 +1114,10 @@ export const useBufferStore = createSelectors(
           if (!isEditableContent(buffer)) return;
 
           if (buffer.content === content && !diffData) return;
+
+          if (isEditableContent(buffer)) {
+            updateRope(bufferId, content);
+          }
 
           set((state) => {
             const buf = state.buffers.find((b) => b.id === bufferId);
