@@ -97,6 +97,13 @@ interface OpenAllFilesDialogState {
 }
 
 const FILE_TREE_CONTAINER_INSET = 4;
+const FOLDER_COLLAPSE_STACK_DURATION_MS = 400;
+
+function getPathDepth(path: string): number {
+  return stripTrailingPathSeparators(path)
+    .split(/[/\\]/)
+    .filter(Boolean).length;
+}
 
 function FileExplorerTreeComponent({
   files,
@@ -130,6 +137,7 @@ function FileExplorerTreeComponent({
   const [editingValue, setEditingValue] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<Document>(document);
+  const collapseAnimationTimeoutsRef = useRef<number[]>([]);
 
   const [gitIgnoreRules, setGitIgnoreRules] = useState<FileTreeGitIgnoreRules | null>(null);
   const workspaceGitStatus = useGitStore((state) => state.workspaceGitStatus);
@@ -663,6 +671,57 @@ function FileExplorerTreeComponent({
     [onFileSelect],
   );
 
+  const clearCollapseAnimation = useCallback(() => {
+    collapseAnimationTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    collapseAnimationTimeoutsRef.current = [];
+  }, []);
+
+  const collapseDirectory = useCallback(
+    (path: string) => {
+      const treeState = useFileTreeStore.getState();
+      const expandedPaths = Array.from(treeState.getExpandedPaths()).filter(
+        (expandedPath) => expandedPath === path || pathStartsWithRoot(expandedPath, path),
+      );
+
+      if (expandedPaths.length === 0) return;
+
+      clearCollapseAnimation();
+
+      const collapseOrder = expandedPaths.sort((left, right) => {
+        const depthDifference = getPathDepth(right) - getPathDepth(left);
+        if (depthDifference !== 0) return depthDifference;
+        return right.length - left.length;
+      });
+
+      collapseOrder.forEach((targetPath, index) => {
+        const delay =
+          collapseOrder.length === 1
+            ? 0
+            : Math.round((index / (collapseOrder.length - 1)) * FOLDER_COLLAPSE_STACK_DURATION_MS);
+
+        const timeoutId = window.setTimeout(() => {
+          const nextExpandedPaths = new Set(useFileTreeStore.getState().getExpandedPaths());
+          nextExpandedPaths.delete(targetPath);
+          useFileTreeStore.getState().setExpandedPaths(nextExpandedPaths);
+        }, delay);
+
+        collapseAnimationTimeoutsRef.current.push(timeoutId);
+      });
+
+      if (
+        activePath &&
+        (activePath === path ||
+          activePath.startsWith(`${path}/`) ||
+          activePath.startsWith(`${path}\\`))
+      ) {
+        updateActivePath?.(path);
+      }
+    },
+    [activePath, clearCollapseAnimation, updateActivePath],
+  );
+
+  useEffect(() => () => clearCollapseAnimation(), [clearCollapseAnimation]);
+
   const handleContainerClick = useCallback(
     (e: React.MouseEvent) => {
       const t = getTargetItem(e.target);
@@ -803,17 +862,18 @@ function FileExplorerTreeComponent({
   }, [activePath]);
 
   return (
-    <div
-      className={cn(
-        "file-tree-container relative flex min-w-full flex-1 select-none flex-col overflow-auto p-1",
-        dragState.dragOverPath === "__ROOT__" &&
-          "border-2! border-dashed! border-accent! bg-accent! bg-opacity-10!",
-      )}
-      ref={containerRef}
-      style={{ scrollBehavior: "auto", overscrollBehavior: "contain" }}
-      role="tree"
-      tabIndex={0}
-      onKeyDown={(e) => {
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div
+        className={cn(
+          "file-tree-container relative flex min-w-full flex-1 select-none flex-col overflow-auto p-1",
+          dragState.dragOverPath === "__ROOT__" &&
+            "border-2! border-dashed! border-accent! bg-accent! bg-opacity-10!",
+        )}
+        ref={containerRef}
+        style={{ scrollBehavior: "auto", overscrollBehavior: "contain" }}
+        role="tree"
+        tabIndex={0}
+        onKeyDown={(e) => {
         // Let inputs handle their own keys
         const tag = (e.target as HTMLElement).tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) {
@@ -945,171 +1005,174 @@ function FileExplorerTreeComponent({
             break;
           }
         }
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = dragState.draggedItem ? "move" : "copy";
-      }}
-      onDrop={handleRootDrop}
-      onClick={handleContainerClick}
-      onDoubleClick={handleContainerDoubleClick}
-      onContextMenu={handleContainerContextMenu}
-      onMouseDown={handleContainerMouseDown}
-      onMouseMove={handleContainerMouseMove}
-      onMouseUp={handleContainerMouseUp}
-      onMouseLeave={handleContainerMouseLeave}
-    >
-      {!rootFolderPath ? (
-        <div className="file-tree-empty-state absolute inset-0 flex items-center justify-center">
-          <div className="ui-font flex flex-col items-center text-center">
-            <span className="text-[0.78em] text-text-lighter">No folder open</span>
-            <Button
-              onClick={handleOpenFolder}
-              variant="ghost"
-              size="sm"
-              className="mt-1.5 text-[0.78em] text-accent hover:text-accent/80"
-            >
-              Open Folder
-            </Button>
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = dragState.draggedItem ? "move" : "copy";
+        }}
+        onDrop={handleRootDrop}
+        onClick={handleContainerClick}
+        onDoubleClick={handleContainerDoubleClick}
+        onContextMenu={handleContainerContextMenu}
+        onMouseDown={handleContainerMouseDown}
+        onMouseMove={handleContainerMouseMove}
+        onMouseUp={handleContainerMouseUp}
+        onMouseLeave={handleContainerMouseLeave}
+      >
+        {!rootFolderPath ? (
+          <div className="file-tree-empty-state absolute inset-0 flex items-center justify-center">
+            <div className="ui-font flex flex-col items-center text-center">
+              <span className="text-[0.78em] text-text-lighter">No folder open</span>
+              <Button
+                onClick={handleOpenFolder}
+                variant="ghost"
+                size="sm"
+                className="mt-1.5 text-[0.78em] text-accent hover:text-accent/80"
+              >
+                Open Folder
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : filteredFiles.length === 0 ? (
-        <div className="file-tree-empty-state absolute inset-0 flex items-center justify-center">
-          <div className="ui-font flex flex-col items-center text-center">
-            <span className="text-[0.78em] text-text-lighter">Folder is empty</span>
+        ) : filteredFiles.length === 0 ? (
+          <div className="file-tree-empty-state absolute inset-0 flex items-center justify-center">
+            <div className="ui-font flex flex-col items-center text-center">
+              <span className="text-[0.78em] text-text-lighter">Folder is empty</span>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="w-max min-w-full">
-          {(() => {
-            const items = rowVirtualizer.getVirtualItems();
-            const paddingTop = items.length ? items[0].start : 0;
-            const paddingBottom = items.length
-              ? rowVirtualizer.getTotalSize() - items[items.length - 1].end
-              : 0;
-            const densityConfig = FILE_TREE_DENSITY_CONFIG[fileTreeDensity];
-            const stickyMarkerIndex =
-              items.length && visibleRows.length
-                ? Math.min(
-                    visibleRows.length - 1,
-                    Math.max(
-                      0,
-                      Math.floor((rowVirtualizer.scrollOffset ?? 0) / densityConfig.rowHeight),
-                    ),
-                  )
-                : -1;
-            const stickyAncestors =
-              stickyMarkerIndex >= 0 ? getStickyAncestorRows(visibleRows, stickyMarkerIndex) : [];
-            const stickyAncestorsStyle = {
-              "--file-tree-container-inset": `${FILE_TREE_CONTAINER_INSET}px`,
-              "--file-tree-sticky-row-height": `${densityConfig.rowHeight}px`,
-              "--file-tree-sticky-stack-height": `${
-                stickyAncestors.length * densityConfig.rowHeight
-              }px`,
-            } as React.CSSProperties;
-            return (
-              <>
-                {stickyAncestors.length > 0 ? (
-                  <div className="file-tree-sticky-ancestors" style={stickyAncestorsStyle}>
-                    <div className="file-tree-sticky-ancestor-stack">
-                      {stickyAncestors.map((stickyAncestor) => {
-                        const stickyAncestorLabel =
-                          stickyAncestor.displayName ?? stickyAncestor.file.name;
-                        const stickyAncestorGitStatus = getGitStatusDecoration(stickyAncestor.file);
-                        const stickyAncestorPaddingLeft =
-                          14 +
-                          FILE_TREE_CONTAINER_INSET +
-                          stickyAncestor.depth * settings.fileTreeIndentSize;
+        ) : (
+          <div className="w-max min-w-full">
+            {(() => {
+              const items = rowVirtualizer.getVirtualItems();
+              const paddingTop = items.length ? items[0].start : 0;
+              const paddingBottom = items.length
+                ? rowVirtualizer.getTotalSize() - items[items.length - 1].end
+                : 0;
+              const densityConfig = FILE_TREE_DENSITY_CONFIG[fileTreeDensity];
+              const stickyMarkerIndex =
+                items.length && visibleRows.length
+                  ? Math.min(
+                      visibleRows.length - 1,
+                      Math.max(
+                        0,
+                        Math.floor((rowVirtualizer.scrollOffset ?? 0) / densityConfig.rowHeight),
+                      ),
+                    )
+                  : -1;
+              const stickyAncestors =
+                stickyMarkerIndex >= 0 ? getStickyAncestorRows(visibleRows, stickyMarkerIndex) : [];
+              const stickyAncestorsStyle = {
+                "--file-tree-container-inset": `${FILE_TREE_CONTAINER_INSET}px`,
+                "--file-tree-sticky-row-height": `${densityConfig.rowHeight}px`,
+                "--file-tree-sticky-stack-height": `${
+                  stickyAncestors.length * densityConfig.rowHeight
+                }px`,
+              } as React.CSSProperties;
+              return (
+                <>
+                  {stickyAncestors.length > 0 ? (
+                    <div className="file-tree-sticky-ancestors" style={stickyAncestorsStyle}>
+                      <div className="file-tree-sticky-ancestor-stack">
+                        {stickyAncestors.map((stickyAncestor) => {
+                          const stickyAncestorLabel =
+                            stickyAncestor.displayName ?? stickyAncestor.file.name;
+                          const stickyAncestorGitStatus = getGitStatusDecoration(stickyAncestor.file);
+                          const stickyAncestorPaddingLeft =
+                            14 +
+                            FILE_TREE_CONTAINER_INSET +
+                            stickyAncestor.depth * settings.fileTreeIndentSize;
 
-                        return (
-                          <button
-                            key={stickyAncestor.file.path}
-                            type="button"
-                            data-file-path={stickyAncestor.file.path}
-                            data-is-dir={stickyAncestor.file.isDir}
-                            data-path={stickyAncestor.file.path}
-                            data-depth={stickyAncestor.depth}
-                            title={stickyAncestor.file.path}
-                            className={cn(
-                              "file-tree-row ui-font ui-text-xs flex w-full min-w-max cursor-pointer select-none items-center whitespace-nowrap rounded-none border-none bg-transparent text-left text-text outline-none transition-colors duration-150 hover:bg-hover focus:outline-none",
-                              densityConfig.rowClassName,
-                            )}
-                            style={{ paddingLeft: `${stickyAncestorPaddingLeft}px` }}
-                          >
-                            <FileExplorerIcon
-                              fileName={stickyAncestor.file.name}
-                              isDir={stickyAncestor.file.isDir}
-                              isExpanded={stickyAncestor.isExpanded}
-                              isSymlink={stickyAncestor.file.isSymlink}
-                              className="relative z-1 shrink-0 text-text-lighter"
-                            />
-                            <span
+                          return (
+                            <button
+                              key={stickyAncestor.file.path}
+                              type="button"
+                              data-file-path={stickyAncestor.file.path}
+                              data-is-dir={stickyAncestor.file.isDir}
+                              data-path={stickyAncestor.file.path}
+                              data-depth={stickyAncestor.depth}
+                              title={stickyAncestor.file.path}
                               className={cn(
-                                "relative z-1 select-none whitespace-nowrap",
-                                stickyAncestorGitStatus?.colorClassName,
+                                "file-tree-row ui-font ui-text-xs flex w-full min-w-max cursor-pointer select-none items-center whitespace-nowrap rounded-none border-none bg-transparent text-left text-text outline-none hover:bg-hover focus:outline-none",
+                                densityConfig.rowClassName,
                               )}
+                              style={{ paddingLeft: `${stickyAncestorPaddingLeft}px` }}
                             >
-                              {stickyAncestorLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <FileExplorerIcon
+                                fileName={stickyAncestor.file.name}
+                                isDir={stickyAncestor.file.isDir}
+                                isExpanded={stickyAncestor.isExpanded}
+                                isSymlink={stickyAncestor.file.isSymlink}
+                                className="relative z-1 shrink-0 text-text-lighter"
+                              />
+                              <span
+                                className={cn(
+                                  "relative z-1 select-none whitespace-nowrap",
+                                  stickyAncestorGitStatus?.colorClassName,
+                                )}
+                              >
+                                {stickyAncestorLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-                <div style={{ height: paddingTop }} />
-                {items.map((vi) => {
-                  const row = visibleRows[vi.index];
-                  const previousRow = visibleRows[vi.index - 1];
-                  const nextRow = visibleRows[vi.index + 1];
-                  const guideTargets: Array<FileTreeGuideTarget | null> = getGuideAncestorRows(
-                    visibleRows,
-                    vi.index,
-                  ).map((ancestor) =>
-                    ancestor
-                      ? {
-                          path: ancestor.file.path,
-                          name: ancestor.displayName ?? ancestor.file.name,
-                          isDir: ancestor.file.isDir,
-                          isActive: activePath
-                            ? activePath === ancestor.file.path ||
-                              activePath.startsWith(`${ancestor.file.path}/`) ||
-                              activePath.startsWith(`${ancestor.file.path}\\`)
-                            : false,
-                        }
-                      : null,
-                  );
-                  return (
-                    <FileExplorerTreeItem
-                      key={row.file.path}
-                      file={row.file}
-                      depth={row.depth}
-                      displayName={row.displayName}
-                      guideTargets={guideTargets}
-                      previousDepth={previousRow?.depth ?? 0}
-                      nextDepth={nextRow?.depth ?? 0}
-                      indentSize={settings.fileTreeIndentSize}
-                      density={fileTreeDensity}
-                      isExpanded={row.isExpanded}
-                      isActive={activePath === row.file.path}
-                      dragOverPath={dragState.dragOverPath}
-                      isDragging={dragState.isDragging}
-                      editingValue={editingValue}
-                      onEditingValueChange={setEditingValue}
-                      onKeyDown={handleKeyDown}
-                      onBlur={handleBlur}
-                      getGitStatusDecoration={getGitStatusDecoration}
-                    />
-                  );
-                })}
-                <div style={{ height: paddingBottom }} />
-              </>
-            );
-          })()}
-        </div>
-      )}
+                  ) : null}
+                  <div style={{ height: paddingTop }} />
+                  {items.map((vi) => {
+                    const row = visibleRows[vi.index];
+                    const previousRow = visibleRows[vi.index - 1];
+                    const nextRow = visibleRows[vi.index + 1];
+                    const guideTargets: Array<FileTreeGuideTarget | null> = getGuideAncestorRows(
+                      visibleRows,
+                      vi.index,
+                    ).map((ancestor) =>
+                      ancestor
+                        ? {
+                            path: ancestor.file.path,
+                            name: ancestor.displayName ?? ancestor.file.name,
+                            isDir: ancestor.file.isDir,
+                            isActive: activePath
+                              ? activePath === ancestor.file.path ||
+                                activePath.startsWith(`${ancestor.file.path}/`) ||
+                                activePath.startsWith(`${ancestor.file.path}\\`)
+                              : false,
+                          }
+                        : null,
+                    );
+                    return (
+                      <FileExplorerTreeItem
+                        key={row.file.path}
+                        file={row.file}
+                        depth={row.depth}
+                        displayName={row.displayName}
+                        guideTargets={guideTargets}
+                        previousDepth={previousRow?.depth ?? 0}
+                        nextDepth={nextRow?.depth ?? 0}
+                        indentSize={settings.fileTreeIndentSize}
+                        density={fileTreeDensity}
+                        isExpanded={row.isExpanded}
+                        isActive={activePath === row.file.path}
+                        isWorkspaceRoot={workspaceRootPaths.includes(row.file.path)}
+                        dragOverPath={dragState.dragOverPath}
+                        isDragging={dragState.isDragging}
+                        editingValue={editingValue}
+                        onEditingValueChange={setEditingValue}
+                        onKeyDown={handleKeyDown}
+                        onBlur={handleBlur}
+                        onCollapseDirectory={collapseDirectory}
+                        getGitStatusDecoration={getGitStatusDecoration}
+                      />
+                    );
+                  })}
+                  <div style={{ height: paddingBottom }} />
+                </>
+              );
+            })()}
+          </div>
+        )}
 
-      {contextMenuElement}
+        {contextMenuElement}
+      </div>
       {alertDialog && (
         <Dialog
           title={alertDialog.title}

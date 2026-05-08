@@ -1,5 +1,6 @@
 import type React from "react";
 import { memo } from "react";
+import { CaretDoubleUp, FolderOpen } from "@phosphor-icons/react";
 import {
   FILE_TREE_DENSITY_CONFIG,
   type FileTreeDensity,
@@ -50,12 +51,14 @@ interface FileExplorerTreeItemProps {
   density: FileTreeDensity;
   isExpanded: boolean;
   isActive: boolean;
+  isWorkspaceRoot: boolean;
   dragOverPath: string | null;
   isDragging: boolean;
   editingValue: string;
   onEditingValueChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent, file: FileEntry) => void;
   onBlur: (file: FileEntry) => void;
+  onCollapseDirectory: (path: string) => void;
   getGitStatusDecoration: (file: FileEntry) => FileTreeGitStatusDecoration | null;
 }
 
@@ -70,12 +73,14 @@ function FileExplorerTreeItemComponent({
   density,
   isExpanded,
   isActive,
+  isWorkspaceRoot,
   dragOverPath,
   isDragging,
   editingValue,
   onEditingValueChange,
   onKeyDown,
   onBlur,
+  onCollapseDirectory,
   getGitStatusDecoration,
 }: FileExplorerTreeItemProps) {
   const isCut = useFileClipboardStore(
@@ -168,7 +173,13 @@ function FileExplorerTreeItemComponent({
   }
 
   return (
-    <div className="file-tree-item w-full" data-depth={depth}>
+    <div
+      className="file-tree-item w-full"
+      data-depth={depth}
+      data-active={isActive ? "true" : undefined}
+      data-expanded={isExpanded ? "true" : undefined}
+      data-is-dir={file.isDir ? "true" : undefined}
+    >
       {renderTreeGuides()}
       <TreeRow
         data-file-path={file.path}
@@ -180,6 +191,7 @@ function FileExplorerTreeItemComponent({
         }
         className={cn(
           densityConfig.rowClassName,
+          file.isDir && isExpanded && !isWorkspaceRoot && "pr-7",
           dragOverPath === file.path &&
             "!border-2 !border-dashed !border-accent !bg-accent !bg-opacity-20",
           isDragging && "cursor-move",
@@ -191,13 +203,17 @@ function FileExplorerTreeItemComponent({
         depth={depth}
         indentSize={indentSize}
       >
-        <FileExplorerIcon
-          fileName={file.name}
-          isDir={file.isDir}
-          isExpanded={isExpanded}
-          isSymlink={file.isSymlink}
-          className="relative z-1 shrink-0 text-text-lighter"
-        />
+        {isWorkspaceRoot ? (
+          <FolderOpen size={14} weight="duotone" className="relative z-1 shrink-0 text-text-lighter" />
+        ) : (
+          <FileExplorerIcon
+            fileName={file.name}
+            isDir={file.isDir}
+            isExpanded={isExpanded}
+            isSymlink={file.isSymlink}
+            className="relative z-1 shrink-0 text-text-lighter"
+          />
+        )}
         <span
           className={cn(
             "relative z-1 select-none whitespace-nowrap",
@@ -207,6 +223,26 @@ function FileExplorerTreeItemComponent({
           {displayName ?? file.name}
         </span>
       </TreeRow>
+      {file.isDir && isExpanded && !isWorkspaceRoot ? (
+        <button
+          type="button"
+          className="file-tree-row-action"
+          aria-label={`Collapse ${displayName ?? file.name}`}
+          title="Collapse folder"
+          tabIndex={-1}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCollapseDirectory(file.path);
+          }}
+        >
+          <CaretDoubleUp weight="bold" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -224,11 +260,13 @@ export const FileExplorerTreeItem = memo(
     prev.density === next.density &&
     prev.isExpanded === next.isExpanded &&
     prev.isActive === next.isActive &&
+    prev.isWorkspaceRoot === next.isWorkspaceRoot &&
     prev.dragOverPath === next.dragOverPath &&
     prev.isDragging === next.isDragging &&
     prev.editingValue === next.editingValue &&
     prev.onEditingValueChange === next.onEditingValueChange &&
     prev.onKeyDown === next.onKeyDown &&
     prev.onBlur === next.onBlur &&
+    prev.onCollapseDirectory === next.onCollapseDirectory &&
     prev.getGitStatusDecoration === next.getGitStatusDecoration,
 );

@@ -30,8 +30,8 @@
   min-width: 100% !important;
 }
 
-/* All file tree items have same background behavior - ensure full width coverage */
-.file-tree-container .file-tree-item button {
+/* All file tree rows have same background behavior - ensure full width coverage */
+.file-tree-container .file-tree-item .file-tree-row {
   background-color: transparent !important;
   width: 100% !important;
   min-width: 100% !important;
@@ -39,12 +39,12 @@
   justify-content: flex-start !important;
 }
 
-.file-tree-container .file-tree-item button:hover {
+.file-tree-container .file-tree-item .file-tree-row:hover {
   background-color: var(--file-tree-hover-bg) !important;
 }
 
-.file-tree-container .file-tree-item button.bg-selected,
-.file-tree-container .file-tree-item button.bg-selected:hover {
+.file-tree-container .file-tree-item .file-tree-row.bg-selected,
+.file-tree-container .file-tree-item .file-tree-row.bg-selected:hover {
   background-color: var(--color-selected) !important;
 }
 
@@ -58,6 +58,69 @@
 .file-tree-row {
   position: relative;
   isolation: isolate;
+}
+
+.file-tree-row-action {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  height: 16px;
+  width: 16px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-text-lighter) 70%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(2px);
+  transition:
+    opacity 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.file-tree-row-action svg {
+  height: 10px;
+  width: 10px;
+}
+
+.file-tree-row-action:hover {
+  background-color: color-mix(in srgb, var(--color-hover) 62%, transparent);
+  color: color-mix(in srgb, var(--color-text) 88%, var(--color-text-lighter));
+}
+
+.file-tree-item[data-is-dir="true"][data-expanded="true"][data-active="true"] .file-tree-row-action,
+.file-tree-item:focus-within .file-tree-row-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .file-tree-item:hover .file-tree-row-action {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-row-action {
+    transition: none;
+    transform: translateY(-50%);
+  }
+
+  .file-tree-item[data-is-dir="true"][data-expanded="true"][data-active="true"]
+    .file-tree-row-action,
+  .file-tree-item:focus-within .file-tree-row-action,
+  .file-tree-item:hover .file-tree-row-action {
+    transform: translateY(-50%);
+  }
 }
 
 .file-tree-context-menu [role="menuitem"],
